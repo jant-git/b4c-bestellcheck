@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+# nur lokal gebraucht (lokal_lauf.py, Tests), nicht im Container
+bereinigen.py
+# von dbt beim Laufen erzeugt
+transform/target/
+transform/logs/

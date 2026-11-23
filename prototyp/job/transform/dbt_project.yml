@@ -1,0 +1,37 @@
+# dbt-Projekt des Bestell-Checks B4C. Daten: SYNTHETISCH.
+#
+# dbt führt die SQL-Dateien in models/ in BigQuery aus, in der Reihenfolge, die sich aus ref() ergibt,
+# und danach die Prüfungen in tests/. Alles landet im bestehenden Dataset b4c_bestellcheck:
+#   roh_*            Rohdaten, eine Kopie pro Lauf (schreibt der Job im Modus «laden», nicht dbt)
+#   stg_*            Stufe 1 · aufbereitet: Text -> Zahl/Datum, R1 Namen, R2 Doppelte
+#   dim_*, fakt_*    Stufe 2 · Sternschema: R3 Tage, R4 Bestand, R5 Lieferung (gleiche Spalten wie in SW10)
+#   meta_bereinigung Protokoll: wie viele Zeilen jede Regel R1–R5 in diesem Lauf betroffen hat
+
+name: b4c_bestellcheck
+version: "1.0.0"
+profile: b4c
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "logs"]
+
+vars:
+  # Der Workflow übergibt beide Werte bei jedem Lauf (--vars). Ohne lauf_id liest Stufe 1 keine Zeile,
+  # dann schlägt Q06 an und der Lauf stoppt: lieber kein Entwurf als einer aus falschen Daten.
+  lauf_id: ""
+  stichtag: "2026-11-16"
+
+seeds:
+  b4c_bestellcheck:
+    dim_produkt:
+      +column_types: {produkt: string, plan_absatz_woche: int64, herkunft: string}
+
+models:
+  b4c_bestellcheck:
+    # Jede Stufe ist eine echte Tabelle, die bei jedem Lauf ganz ersetzt wird. So kann man jede Stufe in
+    # BigQuery einzeln ansehen. Die Historie liegt in roh_* und in den Lauf-Tabellen (bestellentwurf, ...).
+    +materialized: table
+    # Die Beschreibungen aus models/*.yml stehen danach auch in BigQuery beim Schema der Tabelle.
+    +persist_docs: {relation: true, columns: true}

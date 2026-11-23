@@ -1,0 +1,50 @@
+# Alarm 1: E-Mail, sobald der Job b4c-wochenlauf oder der Workflow b4c-bestellcheck fehlschlägt
+# (auch wenn die Qualitätsschranke schliesst). Bauweise wie pipeline/alert-policy.yaml aus den Lektionen.
+displayName: b4c-bestellcheck fehlgeschlagen
+combiner: OR
+documentation:
+  mimeType: text/markdown
+  content: >-
+    Der Wochenlauf B4C ist fehlgeschlagen; es gibt KEINEN Bestellentwurf. Rückfall: Stellvertretung zählt den
+    Bestand und bestellt nach Bestellblatt von Hand (Formel Soll − Bestand − unterwegs). Ursache in Console → Workflows →
+    b4c-bestellcheck → Executions (bei geschlossener Schranke steht dort, welche Prüfung Q01–Q07 oder welches
+    dbt-Modell FEHLER hat; alle Prüfungen des Laufs in BigQuery, Tabelle qualitaet_lauf, Abfrage 6 in abfragen.sql).
+    Daten im Prototyp synthetisch.
+conditions:
+  - displayName: Cloud-Run-Job b4c-wochenlauf fehlgeschlagen
+    conditionThreshold:
+      filter: >-
+        resource.type = "cloud_run_job"
+        AND resource.labels.job_name = "b4c-wochenlauf"
+        AND metric.type = "run.googleapis.com/job/completed_task_attempt_count"
+        AND metric.labels.result = "failed"
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+          groupByFields: [resource.label.job_name]
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      trigger: {count: 1}
+  - displayName: Workflow b4c-bestellcheck fehlgeschlagen
+    conditionThreshold:
+      filter: >-
+        resource.type = "workflows.googleapis.com/Workflow"
+        AND resource.labels.workflow_id = "b4c-bestellcheck"
+        AND metric.type = "workflows.googleapis.com/finished_execution_count"
+        AND metric.labels.status = "FAILED"
+      aggregations:
+        - alignmentPeriod: 300s
+          perSeriesAligner: ALIGN_SUM
+          crossSeriesReducer: REDUCE_SUM
+          groupByFields: [resource.label.workflow_id]
+      comparison: COMPARISON_GT
+      thresholdValue: 0
+      duration: 0s
+      trigger: {count: 1}
+alertStrategy:
+  notificationPrompts: [OPENED]
+  autoClose: 1800s
+notificationChannels:
+  - CHANNEL_ID

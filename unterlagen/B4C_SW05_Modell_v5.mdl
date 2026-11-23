@@ -1,0 +1,504 @@
+{UTF-8}
+********************************************************
+	.Nachfrage
+********************************************************~
+		Nachfrage nach der betrachteten Produktgruppe (verpackte Snacks). Bewusst konstant, damit die Wirkung der Lieferung sichtbar wird.
+	|
+
+Kundenbesuche=
+	700
+	~	Besuch/Week [0,1400,50]
+	~	Charter: rund 700 Kundinnen und Kunden pro Woche, als Besuche interpretiert. Events und Saison bewusst nicht modelliert.
+	|
+
+Kaufmenge je Besuch=
+	0.4
+	~	Produkt/Besuch [0,1,0.05]
+	~	Annahme: im Mittel 0.4 Snacks pro Besuch. Ergibt 280 Snacks pro Woche.
+	|
+
+Nachfrage=
+	Kundenbesuche*Kaufmenge je Besuch
+	~	Produkt/Week
+	~	Wie viele Snacks die Gäste kaufen möchten, unabhängig davon, ob genug Ware da ist. Basis 280 pro Woche.
+	|
+
+********************************************************
+	.Prognose
+********************************************************~
+		Wie der Inhaber die Nachfrage einschätzt: aus dem, was er verkauft hat, und aus Ausverkäufen, soweit er sie bemerkt.
+	|
+
+Erfasster Anteil Fehlmenge=
+	0.5
+	~	Dmnl [0,1,0.25]
+	~	0.5 = heute: Der Inhaber merkt Ausverkäufe, schätzt die verpasste Menge aber nur grob (Augenmass). 1 = Strichliste (Signal S1): Jede verpasste Nachfrage wird gezählt.
+	|
+
+Erfasste Nachfrage=
+	Verkaufsmenge+Erfasster Anteil Fehlmenge*Fehlmenge
+	~	Produkt/Week
+	~	Was der Inhaber von der Nachfrage wahrnimmt: Verkäufe plus der Teil der Fehlmenge, den er bemerkt.
+	|
+
+Planungszeit=
+	1
+	~	Week [0.25,4,0.25]
+	~	Der Erfahrungswert passt sich über etwa eine Woche an (wöchentliche Bestellung).
+	|
+
+Nachfrageprognose=
+	SMOOTHI(Erfasste Nachfrage,Planungszeit,Nachfrage)
+	~	Produkt/Week
+	~	Erfahrungswert des Inhabers. Folgt der erfassten Nachfrage mit Verzögerung. Start 280.
+	|
+
+********************************************************
+	.Bestellregel
+********************************************************~
+		Vorgeschlagene Regel: Prognose plus Korrektur der Lücke im Lager und bei der Ware unterwegs (Signal S2).
+	|
+
+Zielreichweite=
+	0.75
+	~	Week [0.25,2,0.25]
+	~	Normale Reserve: Das Lager deckt 0.75 Wochen (gut 5 Tage) Nachfrage, etwas mehr als die normale Lieferzeit.
+	|
+
+Sollbestand=
+	Nachfrageprognose*Vorgesteuerte Reichweite
+	~	Produkt
+	~	Angestrebter Warenbestand. Normal 280 x 0.75 = 210. Bei Lieferwarnung vorübergehend höher.
+	|
+
+Bestandslücke=
+	Sollbestand-Warenbestand
+	~	Produkt
+	~	Positiv = zu wenig Ware im Lager.
+	|
+
+Geplante Angebotsmenge=
+	Nachfrageprognose*(1+Zielreichweite/Mittlere Verlustzeit)
+	~	Produkt/Week
+	~	Erwarteter Verbrauch: Prognose plus erwarteter Schwund am normalen Lager (1 Prozent pro Woche). Normal 282.1.
+	|
+
+Soll Ware unterwegs=
+	Geplante Angebotsmenge*Basislieferzeit
+	~	Produkt
+	~	So viel sollte bei normaler Lieferzeit bestellt und unterwegs sein. Der Inhaber rechnet mit der normalen Lieferzeit, nicht mit einer Störung. Normal 141.05.
+	|
+
+Lücke Ware unterwegs=
+	Soll Ware unterwegs-Ware unterwegs
+	~	Produkt
+	~	Positiv = zu wenig Ware bestellt und unterwegs.
+	|
+
+Anpassungszeit=
+	1
+	~	Week [0.25,4,0.25]
+	~	Lücken werden über etwa eine Woche ausgeglichen (wöchentliche Bestellung).
+	|
+
+Bestellmenge=
+	MAX(0,Geplante Angebotsmenge+(Bestandslücke+Lücke Ware unterwegs)/Anpassungszeit)
+	~	Produkt/Week
+	~	Bestellt wird der erwartete Verbrauch plus die Lücke im Lager und bei der Ware unterwegs (Signal S2). Nie negativ.
+	|
+
+********************************************************
+	.Lieferung
+********************************************************~
+		Lieferant: normale Lieferzeit und eine Lieferstörung in Woche 14 bis 16 (Szenario).
+	|
+
+Beginn Lieferstörung=
+	14
+	~	Week [0,26,1]
+	~	Testzeitpunkt der Lieferstörung, frei gewählt.
+	|
+
+Ende Lieferstörung=
+	16
+	~	Week [0,26,1]
+	~	Ende der Lieferstörung.
+	|
+
+Lieferstörung aktiv=
+	STEP(1,Beginn Lieferstörung)-STEP(1,Ende Lieferstörung)
+	~	Dmnl
+	~	1 während der Lieferstörung, sonst 0.
+	|
+
+Lieferausfallanteil=
+	0.5
+	~	Dmnl [0,1,0.1]
+	~	Während der Störung sagt der Lieferant nur die Hälfte neuer Bestellungen zu. 0 = keine Störung.
+	|
+
+Lieferfähigkeit=
+	1-Lieferausfallanteil*Lieferstörung aktiv
+	~	Dmnl
+	~	Zugesagter Anteil neuer Bestellungen. Nicht zugesagte Ware verfällt.
+	|
+
+Basislieferzeit=
+	0.5
+	~	Week [0.25,2,0.25]
+	~	Normale Lieferzeit: 3.5 Tage.
+	|
+
+Lieferzeitverlängerung=
+	1
+	~	Week [0,2,0.25]
+	~	Während der Störung dauert die Lieferung 1.5 statt 0.5 Wochen. 0 = keine Störung.
+	|
+
+Lieferzeit=
+	Basislieferzeit+Lieferzeitverlängerung*Lieferstörung aktiv
+	~	Week
+	~	Tatsächliche Lieferzeit. Verzögerung zwischen Ware unterwegs und Liefermenge.
+	|
+
+********************************************************
+	.Vorsteuerung
+********************************************************~
+		Feedforward: Die angekündigte Störung wird gemessen, bevor sie wirkt, und die Reserve vorher erhöht (Signal S6).
+	|
+
+Vorsteuerung aktiv=
+	0
+	~	Dmnl [0,1,1]
+	~	0 = heutige Praxis. 1 = Bei einer Vorwarnung des Lieferanten wird die Reserve vorübergehend erhöht.
+	|
+
+Vorwarnzeit=
+	2
+	~	Week [0,4,0.5]
+	~	Annahme: Der Lieferant kündigt Engpässe (Feiertage, Betriebsferien, Lieferprobleme) 2 Wochen vorher an.
+	|
+
+Lieferwarnung=
+	Vorsteuerung aktiv*(STEP(1,Beginn Lieferstörung-Vorwarnzeit)-STEP(1,Ende Lieferstörung))
+	~	Dmnl
+	~	Störgrösse, gemessen vor ihrer Wirkung: 1 von der Ankündigung bis zum Ende der Störung.
+	|
+
+Zusatzreichweite bei Warnung=
+	0.75
+	~	Week [0,2,0.25]
+	~	Zusätzliche Reserve während der Warnung. 0.75 + 0.75 = 1.5 Wochen, so lange wie die Lieferzeit in der Störung.
+	|
+
+Vorgesteuerte Reichweite=
+	Zielreichweite+Zusatzreichweite bei Warnung*Lieferwarnung
+	~	Week
+	~	Ohne Warnung 0.75 Wochen, mit Warnung 1.5 Wochen.
+	|
+
+********************************************************
+	.Warenfluss
+********************************************************~
+		Bestände und Flüsse der Snacks.
+	|
+
+Lieferzusage=
+	Bestellmenge*Lieferfähigkeit
+	~	Produkt/Week
+	~	Zufluss in Ware unterwegs: vom Lieferanten zugesagte Ware.
+	|
+
+Ware unterwegs=
+	INTEG(Lieferzusage-Liefermenge,Soll Ware unterwegs)
+	~	Produkt
+	~	Bestellte, zugesagte, noch nicht gelieferte Ware. Start 141.05.
+	|
+
+Liefermenge=
+	MAX(0,Ware unterwegs)/Lieferzeit
+	~	Produkt/Week
+	~	Gelieferte Ware. Verzögerung erster Ordnung.
+	|
+
+Abverkaufszeit=
+	0.25
+	~	Week [0.05,1,0.05]
+	~	Unter 0.25 Wochen Reichweite (70 Stück) fehlen einzelne Sorten, nicht mehr jede Nachfrage kann bedient werden.
+	|
+
+Warenverfügbarkeit=
+	MIN(1,XIDZ(MAX(0,Warenbestand),Nachfrage*Abverkaufszeit,1))
+	~	Dmnl
+	~	Anteil der Nachfrage, der bedient werden kann (0 bis 1).
+	|
+
+Verkaufsmenge=
+	Nachfrage*Warenverfügbarkeit
+	~	Produkt/Week
+	~	Verkauft wird der Teil der Nachfrage, für den Ware da ist.
+	|
+
+Fehlmenge=
+	Nachfrage*(1-Warenverfügbarkeit)
+	~	Produkt/Week
+	~	Gäste, die keinen Snack bekommen. Verloren, sie kaufen nicht später nach.
+	|
+
+Mittlere Verlustzeit=
+	100
+	~	Week [4,200,4]
+	~	1 Prozent des Lagers pro Woche verdirbt oder wird beschädigt.
+	|
+
+Verluste=
+	MAX(0,Warenbestand)/Mittlere Verlustzeit
+	~	Produkt/Week
+	~	Abgelaufene oder beschädigte Ware.
+	|
+
+Warenbestand=
+	INTEG(Liefermenge-Verkaufsmenge-Verluste,Sollbestand)
+	~	Produkt
+	~	Verkaufsfähige Snacks im Café. Start 210.
+	|
+
+********************************************************
+	.Kennzahlen
+********************************************************~
+		Zähler für den Szenariovergleich über 26 Wochen.
+	|
+
+Kumulierte Fehlmenge=
+	INTEG(Fehlmenge,0)
+	~	Produkt
+	~	Verlorene Verkäufe seit Start.
+	|
+
+Kumulierte Verluste=
+	INTEG(Verluste,0)
+	~	Produkt
+	~	Verdorbene Ware seit Start.
+	|
+
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+
+FINAL TIME=
+	26
+	~	Week
+	~	26 Wochen Simulationshorizont.
+	|
+
+INITIAL TIME=
+	0
+	~	Week
+	~	Start der Simulation.
+	|
+
+SAVEPER=
+	TIME STEP
+	~	Week [0,?]
+	~	Ausgabeintervall.
+	|
+
+TIME STEP=
+	0.03125
+	~	Week [0,?]
+	~	Rechenschritt 1/32 Woche.
+	|
+
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*1 Kernmodell
+$-1--1--1,0,|12||-1--1--1|-1--1--1|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+12,1,0,400,30,110,11,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|12|B|0-80-160,0,0,0
+BESTELLREGEL
+12,2,0,1160,30,150,11,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|12|B|0-120-60,0,0,0
+PROGNOSE UND NACHFRAGE
+12,3,0,420,575,150,11,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|12|B|170-70-0,0,0,0
+LIEFERUNG UND STÖRUNG
+12,4,48,70,470,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,5,Ware unterwegs,400,470,70,30,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,6,Warenbestand,880,470,70,30,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,7,48,1330,470,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,8,48,880,670,10,8,0,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,9,0,200,470,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,10,Lieferzusage,200,496,45,11,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,11,0,640,470,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,12,Liefermenge,640,496,42,11,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,13,0,1120,470,6,8,34,3,0,0,1,0,0,0,0,0,0,0,0,0
+10,14,Verkaufsmenge,1120,496,48,11,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+11,15,0,880,580,8,6,33,3,0,0,4,0,0,0,0,0,0,0,0,0
+10,16,Verluste,815,580,32,11,40,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,17,Bestellmenge,200,340,45,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,18,Anpassungszeit,70,250,52,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,19,Lücke Ware unterwegs,400,355,58,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,20,Soll Ware unterwegs,400,240,58,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,21,Basislieferzeit,560,285,50,16,8,2,0,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128,0,0,0
+10,22,Geplante Angebotsmenge,400,110,58,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,23,Mittlere Verlustzeit,200,110,52,23,8,2,0,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128,0,0,0
+10,24,Nachfrageprognose,880,110,62,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,25,Planungszeit,880,30,45,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,26,Sollbestand,720,240,42,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,27,Zielreichweite,620,45,52,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,28,Vorgesteuerte Reichweite,720,150,58,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,29,Zusatzreichweite bei Warnung,780,45,62,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,30,Lieferwarnung,575,150,48,16,8,2,0,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128,0,0,0
+10,31,Bestandslücke,720,355,48,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,32,Erfasste Nachfrage,1110,200,55,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,33,Erfasster Anteil Fehlmenge,1290,200,62,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,34,Kundenbesuche,1420,60,48,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,35,Kaufmenge je Besuch,1560,170,50,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,36,Nachfrage,1440,290,35,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,37,Warenverfügbarkeit,1050,380,55,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,38,Abverkaufszeit,930,320,52,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,39,Fehlmenge,1300,380,35,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,40,Lieferfähigkeit,200,620,55,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,41,Lieferausfallanteil,80,700,55,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,42,Lieferstörung aktiv,420,660,55,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,43,Beginn Lieferstörung,340,745,55,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,44,Ende Lieferstörung,500,745,55,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,45,Lieferzeit,640,620,39,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,46,Basislieferzeit,640,745,52,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,47,Lieferzeitverlängerung,760,700,62,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,48,Mittlere Verlustzeit,1000,600,55,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,49,0,1010,448,15,15,4,135,0,24,-1,0,0,0,-1--1--1,-1--1--1,|12|B|0-0-0,0,0,0
+B1
+12,50,0,1010,424,30,8,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|9||96-96-96,0,0,0
+Absatz
+12,51,0,560,410,15,15,5,135,0,24,-1,0,0,0,-1--1--1,-1--1--1,|12|B|0-0-0,0,0,0
+B2
+12,52,0,560,434,30,8,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|9||96-96-96,0,0,0
+Lager
+12,53,0,300,410,15,15,5,135,0,24,-1,0,0,0,-1--1--1,-1--1--1,|12|B|0-0-0,0,0,0
+B3
+12,54,0,300,434,30,8,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|9||96-96-96,0,0,0
+Unterwegs
+12,55,0,935,545,15,15,4,135,0,24,-1,0,0,0,-1--1--1,-1--1--1,|12|B|0-0-0,0,0,0
+B4
+12,56,0,973,545,30,8,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|9||96-96-96,0,0,0
+Verlust
+12,57,0,1250,740,200,34,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|10|I|96-96-96,0,0,0
+Kasten = Bestand, Ventil = Fluss, Pfeil = Informationswirkung. Graue <Namen> = Schattenvariablen. Lila Pfeil = Vorsteuerung (Ansicht 2). Alle Werte sind Annahmen.
+1,58,9,4,68,0,0,22,0,192,0,-1--1--1,,1|(142,470)|
+1,59,9,5,4,0,0,22,0,192,0,-1--1--1,,1|(265,470)|
+1,60,11,5,100,0,0,22,0,192,0,-1--1--1,,1|(555,470)|
+1,61,11,6,4,0,0,22,0,192,0,-1--1--1,,1|(725,470)|
+1,62,13,6,100,0,0,22,0,192,0,-1--1--1,,1|(1035,470)|
+1,63,13,7,4,0,0,22,0,192,0,-1--1--1,,1|(1218,470)|
+1,64,15,6,100,0,0,22,0,192,0,-1--1--1,,1|(880,540)|
+1,65,15,8,4,0,0,22,0,192,0,-1--1--1,,1|(880,620)|
+1,66,17,9,1,0,43,0,0,192,0,-1--1--1,,1|(200,405)|
+1,67,18,17,1,0,45,0,0,192,0,-1--1--1,,1|(135,295)|
+1,68,19,17,1,0,43,0,0,192,0,-1--1--1,,1|(300,347)|
+1,69,5,19,1,0,45,0,0,192,0,-1--1--1,,1|(400,412)|
+1,70,20,19,1,0,43,0,0,192,0,-1--1--1,,1|(400,297)|
+1,71,21,20,1,0,43,0,0,192,0,-1--1--1,,1|(480,262)|
+1,72,22,20,1,0,43,0,0,192,0,-1--1--1,,1|(400,175)|
+1,73,22,17,1,0,43,0,0,192,0,-1--1--1,,1|(270,210)|
+1,74,23,22,1,0,45,0,0,192,0,-1--1--1,,1|(300,110)|
+1,75,24,22,1,0,43,0,0,192,0,-1--1--1,,1|(640,110)|
+1,76,27,22,1,0,43,0,0,192,0,-1--1--1,,1|(500,60)|
+1,77,24,26,1,0,43,0,0,192,0,-1--1--1,,1|(800,185)|
+1,78,28,26,1,0,43,0,0,192,0,-1--1--1,,1|(720,195)|
+1,79,27,28,1,0,43,0,0,192,0,-1--1--1,,1|(670,97)|
+1,80,29,28,1,0,43,0,0,192,0,-1--1--1,,1|(750,97)|
+1,81,30,28,1,0,43,0,0,192,0,128-0-160,,1|(647,150)|
+1,82,26,31,1,0,43,0,0,192,0,-1--1--1,,1|(720,297)|
+1,83,6,31,1,0,45,0,0,192,0,-1--1--1,,1|(800,412)|
+1,84,31,17,1,0,43,0,0,192,0,-1--1--1,,1|(440,425)|
+1,85,20,5,1,0,0,0,1,192,0,128-128-128,,1|(478,330)|
+1,86,26,6,1,0,0,0,1,192,0,128-128-128,,1|(835,330)|
+1,87,25,24,1,0,0,0,0,192,0,-1--1--1,,1|(880,70)|
+1,88,32,24,1,0,43,0,0,192,0,-1--1--1,,1|(995,155)|
+1,89,36,24,1,0,0,0,1,192,0,128-128-128,,1|(1250,95)|
+1,90,13,32,1,0,43,0,0,192,0,-1--1--1,,1|(1160,330)|
+1,91,39,32,1,0,43,0,0,192,0,-1--1--1,,1|(1205,290)|
+1,92,33,32,1,0,43,0,0,192,0,-1--1--1,,1|(1200,200)|
+1,93,34,36,1,0,43,0,0,192,0,-1--1--1,,1|(1430,175)|
+1,94,35,36,1,0,43,0,0,192,0,-1--1--1,,1|(1500,230)|
+1,95,36,13,1,0,43,0,0,192,0,-1--1--1,,1|(1250,420)|
+1,96,36,37,1,0,45,0,0,192,0,-1--1--1,,1|(1250,330)|
+1,97,36,39,1,0,43,0,0,192,0,-1--1--1,,1|(1370,335)|
+1,98,6,37,1,0,43,0,0,192,0,-1--1--1,,1|(950,405)|
+1,99,38,37,1,0,43,0,0,192,0,-1--1--1,,1|(990,350)|
+1,100,37,13,1,0,43,0,0,192,0,-1--1--1,,1|(1085,425)|
+1,101,37,39,1,0,45,0,0,192,0,-1--1--1,,1|(1175,395)|
+1,102,40,9,1,0,43,0,0,192,0,-1--1--1,,1|(200,545)|
+1,103,41,40,1,0,45,0,0,192,0,-1--1--1,,1|(140,660)|
+1,104,42,40,1,0,45,0,0,192,0,-1--1--1,,1|(310,640)|
+1,105,43,42,1,0,0,0,0,192,0,-1--1--1,,1|(380,702)|
+1,106,44,42,1,0,0,0,0,192,0,-1--1--1,,1|(460,702)|
+1,107,42,45,1,0,43,0,0,192,0,-1--1--1,,1|(530,640)|
+1,108,46,45,1,0,43,0,0,192,0,-1--1--1,,1|(640,682)|
+1,109,47,45,1,0,43,0,0,192,0,-1--1--1,,1|(700,660)|
+1,110,45,11,1,0,45,0,0,192,0,-1--1--1,,1|(640,545)|
+1,111,5,11,1,0,43,0,0,192,0,-1--1--1,,1|(540,515)|
+1,112,6,15,1,0,43,0,0,192,0,-1--1--1,,1|(940,545)|
+1,113,48,15,1,0,45,0,0,192,0,-1--1--1,,1|(940,590)|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*2 Vorsteuerung
+$-1--1--1,0,|12||-1--1--1|-1--1--1|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+12,1,0,330,30,180,11,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|12|B|128-0-160,0,0,0
+VORSTEUERUNG (FEEDFORWARD)
+10,2,Vorsteuerung aktiv,150,120,55,23,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,3,Vorwarnzeit,150,220,42,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,4,Beginn Lieferstörung,150,320,55,23,8,2,0,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128,0,0,0
+10,5,Ende Lieferstörung,150,400,55,23,8,2,0,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128,0,0,0
+10,6,Lieferwarnung,420,260,48,16,8,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,7,0,680,260,150,60,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|10|I|96-96-96,0,0,0
+Feedback reagiert auf die Bestandslücke, also erst wenn sie da ist. Vorsteuerung reagiert auf die Ankündigung der Störung und erhöht die Reserve vorher. Wirkung in Ansicht 1 über Vorgesteuerte Reichweite.
+1,8,2,6,1,0,43,0,0,192,0,128-0-160,,1|(285,190)|
+1,9,3,6,1,0,0,0,0,192,0,128-0-160,,1|(285,240)|
+1,10,4,6,1,0,0,0,0,192,0,128-0-160,,1|(285,290)|
+1,11,5,6,1,0,0,0,0,192,0,128-0-160,,1|(285,330)|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
+*3 Kennzahlen
+$-1--1--1,0,|12||-1--1--1|-1--1--1|0-0-255|-1--1--1|-1--1--1|96,96,100,0
+12,1,0,330,30,250,11,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|12|B|90-90-90,0,0,0
+KENNZAHLEN FÜR DEN SZENARIOVERGLEICH
+10,2,Fehlmenge,300,150,35,16,8,2,0,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128,0,0,0
+10,3,Verluste,300,270,32,16,8,2,0,3,-1,0,0,0,128-128-128,0-0-0,|12||128-128-128,0,0,0
+10,4,Kumulierte Fehlmenge,560,150,62,24,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+10,5,Kumulierte Verluste,560,270,62,24,3,3,0,0,-1,0,0,0,0,0,0,0,0,0
+12,6,0,430,360,250,30,8,135,0,26,-1,0,0,0,-1--1--1,-1--1--1,|10|I|96-96-96,0,0,0
+Zähler starten bei 0 und summieren verlorene Verkäufe und verdorbene Ware über 26 Wochen.
+1,7,2,4,1,0,0,0,0,192,0,-1--1--1,,1|(430,150)|
+1,8,3,5,1,0,0,0,0,192,0,-1--1--1,,1|(430,270)|
+///---\\\
+:L<%^E!@
+4:Time
+5:Warenbestand
+19:100,0
+24:0
+25:26
+26:26
+15:0,0,0,0,0,0
+27:0,
+34:0,
+42:0
+72:0
+73:0
+95:0
+96:0
+97:0
+77:0
+78:0
+102:1
+93:0
+94:0
+92:0
+91:0
+90:0
+87:0
+75:
+43:
+103:8,8,8,3,8
+105:0,0,0,0,0,0,0,0,0,0
+104:|12||0-0-0|0-0-0|-1--1--1|0-0-255|192-192-192|-1--1--1

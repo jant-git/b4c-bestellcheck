@@ -1,0 +1,19 @@
+version: 2
+
+# Die Rohdaten: die 5 Erfassungslisten (synthetisch, Kopie aus dem MVP SW09), unverändert als Text.
+# Der Job (Modus «laden») hängt bei jedem Lauf eine Kopie mit lauf_id und geladen_um an. Nichts wird
+# überschrieben, darum lässt sich jeder Lauf später mit genau seinen Daten nachvollziehen.
+sources:
+  - name: roh
+    schema: "{{ target.dataset }}"
+    tables:
+      - name: roh_strichliste
+        description: "Strichliste der Theke (IR-05): pro Tag und Produkt Uhrzeit des Ausverkaufs und verpasste Nachfrage."
+      - name: roh_bestand_montag
+        description: "Bestandszählung am Montag vor der Bestellung (IR-03), dazu Ware unterwegs, erfasstes Soll, bestellte Menge."
+      - name: roh_lieferungen
+        description: "Lieferscheine (IR-04, IR-06): bestellt, zugesagt, geliefert, Soll- und Ist-Stück pro Produkt."
+      - name: roh_verderb
+        description: "Verderb pro Woche und Produkt (IR-07)."
+      - name: roh_vorwarnungen
+        description: "Vorwarnungen des Lieferanten (IR-01): angekündigt am, Kanal, Störung von/bis, erwartete Menge in %."

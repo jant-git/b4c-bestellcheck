@@ -1,0 +1,30 @@
+# Alarm 2: E-Mail bei «Freigabe nötig» und bei Eskalation (Stellvertretung gefragt, niemand hat freigegeben).
+# Quelle sind die strukturierten Logeinträge des Workflows (jsonPayload.b4c_ereignis).
+# Im Prototyp gehen alle Hinweise an eine Adresse; im Betrieb je ein Kanal für Inhaber und Stellvertretung.
+displayName: b4c-bestellcheck Freigabe oder Eskalation
+combiner: OR
+documentation:
+  mimeType: text/markdown
+  content: >-
+    B4C-Bestellentwurf wartet auf Freigabe oder ist eskaliert (siehe Labels ereignis, rolle, lauf_id).
+    Entwurf ansehen und freigeben: im Ordner kleinklasse-automation/prototyp `python3 freigeben.py --zeigen`,
+    dann `python3 freigeben.py --rolle <Inhaber|Stellvertretung> --freigeben --menge Produkt=Zahl ...`.
+    Gelbe und rote Zeilen nur einzeln. Bei ESKALATION_KEINE_FREIGABE wurde nichts bestellt: Inhaber anrufen.
+    Daten im Prototyp synthetisch.
+conditions:
+  - displayName: Freigabe nötig oder Eskalation
+    conditionMatchedLog:
+      filter: >-
+        resource.type = "workflows.googleapis.com/Workflow"
+        AND jsonPayload.b4c_ereignis =~ "^(FREIGABE_NOETIG|ESKALATION_STELLVERTRETUNG|ESKALATION_KEINE_FREIGABE)$"
+      labelExtractors:
+        ereignis: EXTRACT(jsonPayload.b4c_ereignis)
+        rolle: EXTRACT(jsonPayload.rolle)
+        lauf_id: EXTRACT(jsonPayload.lauf_id)
+alertStrategy:
+  # Log-Alarme brauchen eine Rate-Grenze; 5 Minuten ist das Minimum. Darum im Test Fristen ≥ 300 s wählen.
+  notificationRateLimit:
+    period: 300s
+  autoClose: 1800s
+notificationChannels:
+  - CHANNEL_ID

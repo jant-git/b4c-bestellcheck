@@ -1,0 +1,20 @@
+# Verbindung von dbt zu BigQuery. Kein Schlüssel: Im Cloud-Run-Job meldet sich dbt als Service-Account
+# b4c-job-sa an (method oauth = Application Default Credentials). Die Projekt-ID setzt main.py als
+# Umgebungsvariable DBT_PROJECT, damit sie nicht in der Datei steht.
+b4c:
+  target: prod
+  outputs:
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('DBT_PROJECT') }}"
+      dataset: b4c_bestellcheck
+      location: europe-west6
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+      # Kostenbremse: Keine einzelne Abfrage darf mehr als 1 GB abrechnen (höchstens rund 0.6 Rappen).
+      # Nicht enger: BigQuery rechnet pro gelesener Tabelle mindestens 10 MB ab, auch wenn sie nur wenige KB hat.
+      # meta_bereinigung liest 10 Tabellen = 100 MiB; mit 100 MB Grenze scheiterte der erste Testlauf (23.11.).
+      maximum_bytes_billed: 1000000000

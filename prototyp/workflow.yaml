@@ -1,0 +1,266 @@
+# Workflow b4c-bestellcheck: Wochenlauf mit Qualitätsschranke, Freigabe und Eskalation. Daten: SYNTHETISCH.
+#
+# Automation Ladder im Ablauf (siehe 01-automation-decision.md):
+#   laden ..................... automatisieren   (Rohdaten-Kopie dieses Laufs, nichts wird überschrieben)
+#   transformieren ............ automatisieren   (dbt: aufbereiten, Sternschema, Prüfungen Q01–Q14; seit SW11)
+#   schranke .................. automatisieren   (stoppt bei FEHLER, Alarm per E-Mail)
+#   entwurf ................... vorbereiten      (Menge, Ampel, Obergrenze, Begründung)
+#   freigabe .................. Mensch           (Inhaber, nach Frist Stellvertretung, sonst Eskalation)
+#   bestellen / Lieferant ..... nicht automatisiert, nur ein Mail-Entwurf in BigQuery
+#
+# Eingabe (optional, JSON): {"stichtag": "2026-11-16", "frist_inhaber_s": 5400, "frist_stellvertretung_s": 7200}
+# Ohne Eingabe gilt der letzte Montag der synthetischen Daten. Fristen: Lauf 07:30, Inhaber bis 09:00
+# (Bestellung laut IR-03 um 9 Uhr), Stellvertretung bis 11:00.
+
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - project: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - location: ${sys.get_env("GOOGLE_CLOUD_LOCATION")}
+          - job: ${"projects/" + project + "/locations/" + location + "/jobs/b4c-wochenlauf"}
+          - ds: ${project + ".b4c_bestellcheck"}
+          - eingabe: {}
+          - lauf_id: ${sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+          - phase: "inhaber"
+          - antwort: null
+          # Vor dem try anlegen, damit der Wert danach in der Schranke sichtbar ist.
+          - transform_fehler: null
+
+    - eingabe_lesen:
+        # Ohne Eingabe (Scheduler) bleibt «eingabe» leer, dann gelten die Standardwerte.
+        switch:
+          - condition: ${args != null}
+            steps:
+              - eingabe_uebernehmen:
+                  assign:
+                    - eingabe: ${args}
+
+    - parameter:
+        assign:
+          - stichtag: ${default(map.get(eingabe, "stichtag"), "2026-11-16")}
+          - frist_inhaber_s: ${default(map.get(eingabe, "frist_inhaber_s"), 5400)}
+          - frist_stellvertretung_s: ${default(map.get(eingabe, "frist_stellvertretung_s"), 7200)}
+
+    - laden:
+        # Stufe automatisieren: die 5 CSV unverändert als Kopie dieses Laufs nach BigQuery (roh_*, nur anhängen).
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${job}
+          body:
+            overrides:
+              containerOverrides:
+                - args: ${["laden", "--lauf", lauf_id, "--stichtag", stichtag]}
+          connector_params:
+            timeout: 900
+
+    - transformieren:
+        # Stufe automatisieren: dbt baut aus den Rohdaten dieses Laufs stg_* und das Sternschema (SQL in BigQuery)
+        # und führt die Prüfungen Q01–Q14 aus. Jedes Ergebnis steht danach in qualitaet_lauf.
+        # Hat eine Prüfung FEHLER, endet der Job mit Fehler. Wir fangen das hier ab, damit die Schranke
+        # in der Fehlermeldung sagen kann, welche Prüfung es war.
+        try:
+          call: googleapis.run.v2.projects.locations.jobs.run
+          args:
+            name: ${job}
+            body:
+              overrides:
+                containerOverrides:
+                  - args: ${["transformieren", "--lauf", lauf_id, "--stichtag", stichtag]}
+            connector_params:
+              timeout: 900
+        except:
+          as: e
+          steps:
+            - fehler_merken:
+                assign:
+                  - transform_fehler: ${e}
+
+    - schranke_abfragen:
+        call: googleapis.bigquery.v2.jobs.query
+        args:
+          projectId: ${project}
+          body:
+            useLegacySql: false
+            location: europe-west6
+            query: ${"SELECT COUNTIF(ergebnis = 'FEHLER'), COUNTIF(ergebnis = 'WARNUNG'), STRING_AGG(IF(ergebnis = 'FEHLER', pruefung, NULL)) FROM `" + ds + ".qualitaet_lauf` WHERE lauf_id = @lauf"}
+            parameterMode: NAMED
+            queryParameters:
+              - name: lauf
+                parameterType: {type: STRING}
+                parameterValue: {value: '${lauf_id}'}
+        result: q
+
+    - schranke:
+        # Qualitätsschranke: bei FEHLER kein Entwurf, keine Freigabe-Anfrage. Der Workflow scheitert, der Alarm meldet es.
+        # Ist transformieren gescheitert, ohne dass eine Prüfung FEHLER meldet (z. B. Job nicht gestartet),
+        # geben wir den ursprünglichen Fehler weiter: auch dann kein Entwurf.
+        switch:
+          - condition: ${int(q.rows[0].f[0].v) > 0}
+            raise: '${"Qualitätsschranke geschlossen, Lauf " + lauf_id + ", FEHLER in: " + default(q.rows[0].f[2].v, "?")}'
+          - condition: ${transform_fehler != null}
+            raise: ${transform_fehler}
+
+    - entwurf:
+        # Stufe vorbereiten: Signale, Reichweite, Menge, Ampel, Obergrenze. Es wird nichts bestellt.
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${job}
+          body:
+            overrides:
+              containerOverrides:
+                - args: ${["entwurf", "--lauf", lauf_id, "--stichtag", stichtag]}
+          connector_params:
+            timeout: 900
+
+    - zusammenfassung_abfragen:
+        call: googleapis.bigquery.v2.jobs.query
+        args:
+          projectId: ${project}
+          body:
+            useLegacySql: false
+            location: europe-west6
+            query: ${"SELECT COUNTIF(ampel = 'automatisch vorbereitet'), COUNTIF(ampel = 'Freigabe nötig'), COUNTIF(ampel = 'Eskalation'), SUM(menge_vorschlag) FROM `" + ds + ".bestellentwurf` WHERE lauf_id = @lauf"}
+            parameterMode: NAMED
+            queryParameters:
+              - name: lauf
+                parameterType: {type: STRING}
+                parameterValue: {value: '${lauf_id}'}
+        result: s
+
+    - zusammenfassung:
+        assign:
+          - text: '${"Stichtag " + stichtag + ": grün " + s.rows[0].f[0].v + ", gelb " + s.rows[0].f[1].v + ", rot " + s.rows[0].f[2].v + ", Menge total " + s.rows[0].f[3].v + " (synthetisch)"}'
+
+    - frage_inhaber:
+        call: freigabe_anfragen
+        args: {project: '${project}', ds: '${ds}', lauf_id: '${lauf_id}', rolle: "Inhaber", ereignis: "FREIGABE_NOETIG",
+               frist_s: '${frist_inhaber_s}', text: '${text}'}
+        result: antwort
+
+    - inhaber_hat_geantwortet:
+        switch:
+          - condition: ${antwort != null}
+            next: freigabe_verbuchen
+
+    - eskalation_stellvertretung:
+        # Brief: «Inhaber, sonst Stellvertretung». Rote Zeilen darf sie nicht freigeben (nur Rückfallmenge).
+        steps:
+          - phase_wechseln:
+              assign:
+                - phase: "stellvertretung"
+          - frage_stellvertretung:
+              call: freigabe_anfragen
+              args: {project: '${project}', ds: '${ds}', lauf_id: '${lauf_id}', rolle: "Stellvertretung",
+                     ereignis: "ESKALATION_STELLVERTRETUNG", frist_s: '${frist_stellvertretung_s}', text: '${text}'}
+              result: antwort
+
+    - stellvertretung_hat_geantwortet:
+        switch:
+          - condition: ${antwort != null}
+            next: freigabe_verbuchen
+
+    - eskalation_keine_freigabe:
+        # Niemand hat freigegeben: es wird nichts bestellt. Alarm an den Inhaber (Rückfall: anrufen, von Hand bestellen).
+        steps:
+          - keine_antwort:
+              assign:
+                - phase: "keine_antwort"
+                - antwort: {}
+          - melden:
+              call: sys.log
+              args:
+                severity: WARNING
+                json:
+                  b4c_ereignis: "ESKALATION_KEINE_FREIGABE"
+                  rolle: "Inhaber"
+                  lauf_id: ${lauf_id}
+                  text: ${text}
+
+    - freigabe_verbuchen:
+        # Der Job prüft Rolle, Phase, Ampel und Obergrenze und schreibt das Freigabeprotokoll (wer, wann, was).
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${job}
+          body:
+            overrides:
+              containerOverrides:
+                - args: ${["freigabe", "--lauf", lauf_id, "--stichtag", stichtag, "--phase", phase, "--antwort", json.encode_to_string(antwort)]}
+          connector_params:
+            timeout: 900
+
+    - fertig:
+        return:
+          lauf_id: ${lauf_id}
+          stichtag: ${stichtag}
+          phase: ${phase}
+          entwurf: ${text}
+          hinweis: "Freigegebene Mengen in freigabe_protokoll, Mail-Entwurf in bestellmail_entwurf (nicht versendet)."
+
+
+# Fragt eine Rolle um Freigabe: Callback anlegen, Anfrage in BigQuery speichern, Hinweis loggen (-> E-Mail),
+# auf Antwort warten. Gibt die Antwort zurück oder null, wenn die Frist abläuft.
+freigabe_anfragen:
+  params: [project, ds, lauf_id, rolle, ereignis, frist_s, text]
+  steps:
+    - callback_anlegen:
+        call: events.create_callback_endpoint
+        args:
+          http_callback_method: "POST"
+        result: cb
+
+    - anfrage_speichern:
+        call: googleapis.bigquery.v2.jobs.query
+        args:
+          projectId: ${project}
+          body:
+            useLegacySql: false
+            location: europe-west6
+            query: ${"INSERT INTO `" + ds + ".freigabe_anfrage` (lauf_id, phase, rolle_erwartet, callback_url, frist, erstellt_um) VALUES (@lauf, @rolle, @rolle, @url, TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL @frist SECOND), CURRENT_TIMESTAMP())"}
+            parameterMode: NAMED
+            queryParameters:
+              - name: lauf
+                parameterType: {type: STRING}
+                parameterValue: {value: '${lauf_id}'}
+              - name: rolle
+                parameterType: {type: STRING}
+                parameterValue: {value: '${rolle}'}
+              - name: url
+                parameterType: {type: STRING}
+                parameterValue: {value: '${cb.url}'}
+              - name: frist
+                parameterType: {type: INT64}
+                parameterValue: {value: '${string(frist_s)}'}
+
+    - hinweis_loggen:
+        # Die Alarmrichtlinie alarm-hinweis.yaml schickt daraus eine E-Mail.
+        call: sys.log
+        args:
+          severity: NOTICE
+          json:
+            b4c_ereignis: ${ereignis}
+            rolle: ${rolle}
+            lauf_id: ${lauf_id}
+            frist_s: ${frist_s}
+            text: ${text}
+
+    - warten:
+        try:
+          call: events.await_callback
+          args:
+            callback: ${cb}
+            timeout: ${frist_s}
+          result: cb_req
+        except:
+          as: e
+          steps:
+            - nur_frist_abgelaufen:
+                switch:
+                  - condition: ${"TimeoutError" in e.tags}
+                    return: null
+            - anderer_fehler:
+                raise: ${e}
+
+    - antwort_zurueckgeben:
+        return: ${cb_req.http_request.body}

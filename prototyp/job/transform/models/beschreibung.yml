@@ -1,0 +1,65 @@
+version: 2
+
+# Beschreibungen der Tabellen. Die Begriffe stammen aus dem Anforderungskatalog (B1 Begriffe), damit zwei
+# Personen dieselbe Zahl gleich verstehen. dbt schreibt sie bei jedem Lauf ins Schema der Tabelle in BigQuery.
+
+models:
+  # ---------------------------------------------------------------- Stufe 1 · aufbereitet
+  - name: stg_strichliste
+    description: "Stufe 1: Strichliste dieses Laufs, typisiert. R1 Produktname vereinheitlicht, R2 Doppelte zusammengeführt."
+  - name: stg_bestand
+    description: "Stufe 1: Bestandszählung dieses Laufs, typisiert. Leer = nicht gezählt (R4 folgt in fakt_bestand)."
+  - name: stg_lieferungen
+    description: "Stufe 1: Lieferscheine dieses Laufs, typisiert. Leeres Lieferdatum = unbekannt."
+  - name: stg_verderb
+    description: "Stufe 1: Verderb dieses Laufs, typisiert."
+  - name: stg_vorwarnungen
+    description: "Stufe 1: Vorwarnungen dieses Laufs, typisiert."
+
+  # ---------------------------------------------------------------- Stufe 2 · Sternschema
+  - name: dim_datum
+    description: "Dimension Datum: alle Öffnungstage Mo–Sa. R3: Tag ohne Strichliste = «fehlt», nicht 0."
+    columns:
+      - name: strichliste_status
+        description: "geführt oder fehlt. «fehlt» heisst: keine Aussage über Ausverkauf möglich, nicht «kein Ausverkauf»."
+  - name: fakt_strichliste
+    description: "Fakt Strichliste, eine Zeile pro Produkt und Öffnungstag. SYNTHETISCH."
+    columns:
+      - name: leer_um
+        description: "Ausverkauf: Uhrzeit, zu der das Produkt in Regal UND Lager bei 0 war (nicht: nur eine Sorte im Regal leer)."
+      - name: nachfragen_nach_leer
+        description: "Verpasste Nachfrage: ein Strich pro Gast, der nach dem ausverkauften Produkt fragt (nicht: Gast nimmt still etwas anderes)."
+  - name: fakt_bestand
+    description: "Fakt Bestand, eine Zeile pro Produkt und Montag. R4: fehlende Zählung = Vorwochenwert, «geschätzt». SYNTHETISCH."
+    columns:
+      - name: bestand
+        description: "Bestand: physisch gezählte Stück in Regal und Lager, Montag vor der Bestellung (nicht: geschätzt, nicht: bestellte Ware)."
+      - name: bestand_status
+        description: "gezählt oder geschätzt (Vorwochenwert). Geschätzt macht den Entwurf gelb."
+      - name: unterwegs
+        description: "Ware unterwegs: bestellt und vom Lieferanten bestätigt, noch nicht geliefert (nicht: nur geplant)."
+  - name: fakt_lieferung
+    description: "Fakt Lieferung, eine Zeile pro Lieferschein und Produkt. R5: Verspätung und Vollständigkeit. SYNTHETISCH."
+    columns:
+      - name: verspaetung_tage
+        description: "Zu spät: Tage nach dem zugesagten Liefertag. NULL = Lieferdatum unbekannt (nicht: pünktlich)."
+      - name: vollstaendig
+        description: "Unvollständig heisst weniger als 90 % der bestellten Menge. Eine angekündigte Störung zählt nicht als zu spät/unvollständig (das prüft regeln.py)."
+  - name: fakt_verderb
+    description: "Fakt Verderb, eine Zeile pro Produkt und Woche. SYNTHETISCH."
+    columns:
+      - name: entsorgt_stueck
+        description: "Verderb: Stück entsorgt wegen Ablaufdatum oder Beschädigung (nicht: Eigenverbrauch)."
+  - name: fakt_vorwarnung
+    description: "Fakt Vorwarnung, eine Zeile pro Ankündigung des Lieferanten. SYNTHETISCH."
+    columns:
+      - name: angekuendigt_am
+        description: "Vorwarnung: Ankündigung des Lieferanten (Mail oder Telefon) vor Beginn einer Störung (nicht: nachträgliche Entschuldigung)."
+      - name: vorlauf_tage
+        description: "Tage zwischen Ankündigung und Störungsbeginn. Entscheidregel des Briefs: in 2 von 3 Fällen mindestens 7."
+  - name: meta_bereinigung
+    description: "Protokoll dieses Laufs: wie viele Zeilen jede Regel R1–R5 betroffen hat."
+
+seeds:
+  - name: dim_produkt
+    description: "Dimension Produkt: die 4 Snacks mit Plan-Absatz pro Woche (Annahme aus Modell v5, Summe 280). Muss mit PRODUKTE in regeln.py übereinstimmen."

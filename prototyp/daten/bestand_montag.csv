@@ -1,0 +1,17 @@
+datum,produkt,bestand_gezaehlt,unterwegs,soll,bestellt,erfasst_von,herkunft
+2026-10-26,Muesliriegel,23,29,60,88,Inhaber,synthetisch
+2026-10-26,Cookies,25,21,53,77,Inhaber,synthetisch
+2026-10-26,Chips,18,22,53,83,Inhaber,synthetisch
+2026-10-26,Nuesse,20,20,45,65,Inhaber,synthetisch
+2026-11-02,Muesliriegel,34,24,60,82,Inhaber,synthetisch
+2026-11-02,Cookies,,25,53,74,Inhaber,synthetisch
+2026-11-02,Chips,27,22,53,74,Inhaber,synthetisch
+2026-11-02,Nuesse,21,23,45,61,Inhaber,synthetisch
+2026-11-09,Muesliriegel,63,27,120,110,Inhaber,synthetisch
+2026-11-09,Cookies,39,26,105,110,Inhaber,synthetisch
+2026-11-09,Chips,46,26,105,103,Inhaber,synthetisch
+2026-11-09,Nuesse,33,15,90,102,Inhaber,synthetisch
+2026-11-16,Muesliriegel,49,21,120,90,Inhaber,synthetisch
+2026-11-16,Cookies,60,22,105,58,Inhaber,synthetisch
+2026-11-16,Chips,42,25,105,73,Inhaber,synthetisch
+2026-11-16,Nuesse,45,19,90,56,Inhaber,synthetisch

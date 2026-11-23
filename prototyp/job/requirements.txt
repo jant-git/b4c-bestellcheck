@@ -1,0 +1,5 @@
+google-cloud-bigquery>=3,<4
+google-cloud-storage>=3,<4
+# dbt (SW11): führt die SQL-Dateien in transform/ in BigQuery aus und prüft die Ergebnisse
+dbt-core>=1.9,<2
+dbt-bigquery>=1.9,<2
